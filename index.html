@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NewInfraGG</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 40rem;
+        margin: 4rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      #db-content {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fafafa;
+      }
+      .error { color: #b00020; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello from html</h1>
+    <div id="db-content">Loading content from D1...</div>
+    <script>
+      fetch("/api/content")
+        .then((r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then((data) => {
+          document.getElementById("db-content").textContent = data.text;
+        })
+        .catch((err) => {
+          const el = document.getElementById("db-content");
+          el.textContent = "Failed to load from D1: " + err.message;
+          el.classList.add("error");
+        });
+    </script>
+  </body>
+</html>
