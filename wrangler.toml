@@ -1,0 +1,12 @@
+name = "NewInfraGG"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "."
+
+# D1 binding. `database_id` is rewritten by the GitHub Actions workflow
+# at deploy time (see .github/workflows/deploy.yml), because the id only
+# exists after the database has been created on Cloudflare's side.
+[[d1_databases]]
+binding = "DB"
+database_name = "newinfragg-db"
+database_id = "PLACEHOLDER"
+migrations_dir = "migrations"

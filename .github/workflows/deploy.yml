@@ -1,0 +1,195 @@
+name: Deploy NewInfraGG to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/cloudflare-pages-d1-setup-GNlHm
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-newinfragg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DB_NAME: newinfragg-db
+      PROJECT_NAME: NewInfraGG
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install wrangler and jq
+        run: |
+          set -euo pipefail
+          npm install -g wrangler@3
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Verify Cloudflare credentials are present
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is missing. Add it in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID secret is missing. Add it in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Ensure D1 database exists and patch wrangler.toml
+        id: d1
+        run: |
+          set -euo pipefail
+
+          lookup_id() {
+            wrangler d1 list --json 2>/dev/null \
+              | jq -r --arg n "$DB_NAME" \
+                  '.[] | select(.name==$n) | .uuid' \
+              | head -1
+          }
+
+          DB_ID="$(lookup_id || true)"
+
+          if [ -z "${DB_ID}" ]; then
+            echo "D1 database '$DB_NAME' not found — creating it..."
+            if CREATE_OUT=$(wrangler d1 create "$DB_NAME" 2>&1); then
+              echo "$CREATE_OUT"
+              DB_ID=$(echo "$CREATE_OUT" \
+                | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+                | head -1 || true)
+            else
+              echo "$CREATE_OUT"
+              if echo "$CREATE_OUT" | grep -qiE "already exists|name is already taken"; then
+                echo "Race: DB appeared between list and create — re-fetching id..."
+                DB_ID="$(lookup_id || true)"
+              else
+                echo "::error::wrangler d1 create failed — see log above"
+                exit 1
+              fi
+            fi
+          else
+            echo "Reusing existing D1 database '$DB_NAME' (id=$DB_ID)."
+          fi
+
+          if [ -z "${DB_ID}" ]; then
+            echo "::error::Could not resolve D1 database_id after create + lookup"
+            exit 1
+          fi
+
+          echo "Resolved D1 database_id: $DB_ID"
+          sed -i "s/PLACEHOLDER/$DB_ID/" wrangler.toml
+          if grep -q PLACEHOLDER wrangler.toml; then
+            echo "::error::wrangler.toml still contains PLACEHOLDER — sed did not substitute"
+            exit 1
+          fi
+          echo "--- patched wrangler.toml ---"
+          cat wrangler.toml
+
+      - name: Apply D1 migrations (remote)
+        run: |
+          set -euo pipefail
+          # SQL is idempotent (IF NOT EXISTS + WHERE NOT EXISTS),
+          # so re-applying on every run is safe.
+          wrangler d1 migrations apply "$DB_NAME" --remote --yes
+
+      - name: Ensure Cloudflare Pages project exists
+        run: |
+          set -euo pipefail
+          if wrangler pages project list --json \
+               | jq -e --arg n "$PROJECT_NAME" \
+                   '.[] | select(.name==$n)' > /dev/null; then
+            echo "Pages project '$PROJECT_NAME' already exists — skipping create."
+          else
+            echo "Creating Pages project '$PROJECT_NAME'..."
+            if CREATE_OUT=$(wrangler pages project create "$PROJECT_NAME" \
+                              --production-branch main 2>&1); then
+              echo "$CREATE_OUT"
+            else
+              echo "$CREATE_OUT"
+              if echo "$CREATE_OUT" | grep -qiE "already exists|name is already taken"; then
+                echo "Race: project appeared meanwhile — continuing."
+              else
+                echo "::error::wrangler pages project create failed"
+                exit 1
+              fi
+            fi
+          fi
+
+      - name: Deploy to Cloudflare Pages (with retry)
+        id: deploy
+        run: |
+          set -euo pipefail
+          deploy() {
+            wrangler pages deploy . \
+              --project-name "$PROJECT_NAME" \
+              --branch "${GITHUB_REF_NAME}" \
+              --commit-dirty=true \
+              2>&1 | tee deploy.log
+          }
+
+          ok=0
+          for i in 1 2 3; do
+            if deploy; then ok=1; break; fi
+            if [ "$i" = "3" ]; then break; fi
+            echo "Deploy attempt $i failed, retrying in $((i*5))s..."
+            sleep $((i*5))
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::wrangler pages deploy failed after 3 attempts"
+            exit 1
+          fi
+
+          DEPLOY_URL=$(grep -oE 'https://[a-z0-9-]+\.newinfragg\.pages\.dev' deploy.log | tail -1 || true)
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL=$(grep -oE 'https://[^ ]+\.pages\.dev' deploy.log | tail -1 || true)
+          fi
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL="https://newinfragg.pages.dev"
+          fi
+          echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          echo "Deploy URL: $DEPLOY_URL"
+
+      - name: Smoke test deployed site
+        run: |
+          set -euo pipefail
+          URL="${{ steps.deploy.outputs.deploy_url }}"
+          echo "Smoke-testing $URL ..."
+
+          # Give the edge a few seconds to propagate the new deployment.
+          sleep 5
+
+          # 1. HTML has "Hello from html"
+          HTML=$(curl -fsSL --retry 5 --retry-delay 3 "$URL")
+          if ! echo "$HTML" | grep -q "Hello from html"; then
+            echo "::error::HTML at $URL is missing 'Hello from html'"
+            echo "--- response ---"
+            echo "$HTML"
+            exit 1
+          fi
+
+          # 2. /api/content returns "hello from DB"
+          API=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/content")
+          if ! echo "$API" | grep -q "hello from DB"; then
+            echo "::error::$URL/api/content did not return 'hello from DB'"
+            echo "--- response ---"
+            echo "$API"
+            exit 1
+          fi
+
+          echo "Smoke test passed. Live at: $URL"
