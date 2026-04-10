@@ -133,7 +133,15 @@ jobs:
           set -euo pipefail
           # SQL is idempotent (IF NOT EXISTS + WHERE NOT EXISTS),
           # so re-applying on every run is safe.
-          wrangler d1 migrations apply "$DB_NAME" --remote --yes
+          # Notes on the piping:
+          # - `--yes` does NOT exist on `d1 migrations apply`, unlike
+          #   `wrangler deploy` — we learned this from a CI failure.
+          # - `wrangler d1 migrations apply --remote` may prompt for
+          #   confirmation. We pipe a bounded `y\n` via `printf` so that
+          #   (a) any prompt is auto-accepted, and (b) stdin reaches EOF
+          #   cleanly, avoiding the SIGPIPE/141 trap that `yes |` hits
+          #   under `set -o pipefail` when wrangler exits first.
+          printf 'y\n' | wrangler d1 migrations apply "$DB_NAME" --remote
 
       - name: Ensure Cloudflare Pages project exists
         run: |
