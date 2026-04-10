@@ -20,6 +20,35 @@
         background: #fafafa;
       }
       .error { color: #b00020; }
+      #breakout {
+        margin-top: 2rem;
+        text-align: center;
+      }
+      #breakout h2 {
+        margin-bottom: 0.5rem;
+      }
+      #breakout canvas {
+        background: #0b0f1a;
+        display: block;
+        margin: 0 auto;
+        border: 2px solid #222;
+        border-radius: 6px;
+        max-width: 100%;
+      }
+      #breakout .info {
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+        color: #555;
+      }
+      #breakout button {
+        margin-top: 0.5rem;
+        padding: 0.4rem 0.9rem;
+        font-size: 0.9rem;
+        border: 1px solid #888;
+        border-radius: 4px;
+        background: #f5f5f5;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -39,6 +68,249 @@
           el.textContent = "Failed to load from D1: " + err.message;
           el.classList.add("error");
         });
+    </script>
+
+    <section id="breakout">
+      <h2>Casse-brique</h2>
+      <canvas id="breakout-canvas" width="480" height="360"></canvas>
+      <div class="info">
+        Déplacez la raquette avec les flèches ← → ou la souris.
+        <br />
+        <span id="breakout-status">Cliquez sur "Démarrer" pour commencer.</span>
+      </div>
+      <button id="breakout-start">Démarrer</button>
+    </section>
+    <script>
+      (function () {
+        const canvas = document.getElementById("breakout-canvas");
+        const ctx = canvas.getContext("2d");
+        const statusEl = document.getElementById("breakout-status");
+        const startBtn = document.getElementById("breakout-start");
+
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Paddle
+        const paddle = {
+          w: 75,
+          h: 10,
+          x: (W - 75) / 2,
+          y: H - 20,
+          speed: 6,
+        };
+
+        // Ball
+        const ball = {
+          r: 7,
+          x: W / 2,
+          y: H - 30,
+          dx: 3,
+          dy: -3,
+        };
+
+        // Bricks
+        const brick = {
+          rows: 4,
+          cols: 8,
+          w: 50,
+          h: 16,
+          padding: 6,
+          offsetTop: 30,
+          offsetLeft: 26,
+        };
+
+        let bricks = [];
+        function buildBricks() {
+          bricks = [];
+          for (let c = 0; c < brick.cols; c++) {
+            bricks[c] = [];
+            for (let r = 0; r < brick.rows; r++) {
+              bricks[c][r] = { x: 0, y: 0, alive: true };
+            }
+          }
+        }
+
+        let score = 0;
+        let lives = 3;
+        let running = false;
+        let gameOver = false;
+        const keys = { left: false, right: false };
+
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowLeft") keys.left = true;
+          else if (e.key === "ArrowRight") keys.right = true;
+        });
+        document.addEventListener("keyup", (e) => {
+          if (e.key === "ArrowLeft") keys.left = false;
+          else if (e.key === "ArrowRight") keys.right = false;
+        });
+        canvas.addEventListener("mousemove", (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const scale = canvas.width / rect.width;
+          const relX = (e.clientX - rect.left) * scale;
+          if (relX > 0 && relX < W) {
+            paddle.x = relX - paddle.w / 2;
+            if (paddle.x < 0) paddle.x = 0;
+            if (paddle.x + paddle.w > W) paddle.x = W - paddle.w;
+          }
+        });
+
+        function resetBallAndPaddle() {
+          ball.x = W / 2;
+          ball.y = H - 30;
+          ball.dx = 3 * (Math.random() < 0.5 ? -1 : 1);
+          ball.dy = -3;
+          paddle.x = (W - paddle.w) / 2;
+        }
+
+        function drawBall() {
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffd166";
+          ctx.fill();
+          ctx.closePath();
+        }
+
+        function drawPaddle() {
+          ctx.fillStyle = "#06d6a0";
+          ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+        }
+
+        function drawBricks() {
+          for (let c = 0; c < brick.cols; c++) {
+            for (let r = 0; r < brick.rows; r++) {
+              const b = bricks[c][r];
+              if (!b.alive) continue;
+              const bx = c * (brick.w + brick.padding) + brick.offsetLeft;
+              const by = r * (brick.h + brick.padding) + brick.offsetTop;
+              b.x = bx;
+              b.y = by;
+              const hue = 200 + r * 25;
+              ctx.fillStyle = "hsl(" + hue + ", 70%, 55%)";
+              ctx.fillRect(bx, by, brick.w, brick.h);
+            }
+          }
+        }
+
+        function drawHUD() {
+          ctx.fillStyle = "#e0e0e0";
+          ctx.font = "14px system-ui, sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText("Score : " + score, 8, 18);
+          ctx.textAlign = "right";
+          ctx.fillText("Vies : " + lives, W - 8, 18);
+          ctx.textAlign = "left";
+        }
+
+        function collisionDetection() {
+          for (let c = 0; c < brick.cols; c++) {
+            for (let r = 0; r < brick.rows; r++) {
+              const b = bricks[c][r];
+              if (!b.alive) continue;
+              if (
+                ball.x + ball.r > b.x &&
+                ball.x - ball.r < b.x + brick.w &&
+                ball.y + ball.r > b.y &&
+                ball.y - ball.r < b.y + brick.h
+              ) {
+                ball.dy = -ball.dy;
+                b.alive = false;
+                score++;
+                if (score === brick.rows * brick.cols) {
+                  running = false;
+                  gameOver = true;
+                  statusEl.textContent =
+                    "Victoire ! Score final : " + score + ". Cliquez sur Démarrer pour rejouer.";
+                  startBtn.textContent = "Rejouer";
+                }
+              }
+            }
+          }
+        }
+
+        function update() {
+          if (keys.left) paddle.x -= paddle.speed;
+          if (keys.right) paddle.x += paddle.speed;
+          if (paddle.x < 0) paddle.x = 0;
+          if (paddle.x + paddle.w > W) paddle.x = W - paddle.w;
+
+          ball.x += ball.dx;
+          ball.y += ball.dy;
+
+          if (ball.x + ball.r > W) {
+            ball.x = W - ball.r;
+            ball.dx = -ball.dx;
+          } else if (ball.x - ball.r < 0) {
+            ball.x = ball.r;
+            ball.dx = -ball.dx;
+          }
+          if (ball.y - ball.r < 0) {
+            ball.y = ball.r;
+            ball.dy = -ball.dy;
+          } else if (
+            ball.y + ball.r > paddle.y &&
+            ball.y + ball.r < paddle.y + paddle.h &&
+            ball.x > paddle.x &&
+            ball.x < paddle.x + paddle.w
+          ) {
+            const hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+            const angle = hit * (Math.PI / 3);
+            const speed = Math.hypot(ball.dx, ball.dy);
+            ball.dx = speed * Math.sin(angle);
+            ball.dy = -Math.abs(speed * Math.cos(angle));
+          } else if (ball.y + ball.r > H) {
+            lives--;
+            if (lives <= 0) {
+              running = false;
+              gameOver = true;
+              statusEl.textContent =
+                "Game Over ! Score final : " + score + ". Cliquez sur Démarrer pour rejouer.";
+              startBtn.textContent = "Rejouer";
+            } else {
+              statusEl.textContent = "Vies restantes : " + lives;
+              resetBallAndPaddle();
+            }
+          }
+
+          collisionDetection();
+        }
+
+        function draw() {
+          ctx.clearRect(0, 0, W, H);
+          drawBricks();
+          drawPaddle();
+          drawBall();
+          drawHUD();
+        }
+
+        function loop() {
+          if (!running) {
+            draw();
+            return;
+          }
+          update();
+          draw();
+          requestAnimationFrame(loop);
+        }
+
+        function startGame() {
+          score = 0;
+          lives = 3;
+          gameOver = false;
+          buildBricks();
+          resetBallAndPaddle();
+          running = true;
+          statusEl.textContent = "En cours... Bonne chance !";
+          startBtn.textContent = "Redémarrer";
+          loop();
+        }
+
+        startBtn.addEventListener("click", startGame);
+
+        // Initial render
+        buildBricks();
+        draw();
+      })();
     </script>
   </body>
 </html>
