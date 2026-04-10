@@ -55,10 +55,20 @@ jobs:
             exit 1
           fi
 
-      - name: Ensure D1 database exists and patch wrangler.toml
+      - name: Ensure D1 database exists and append binding to wrangler.toml
         id: d1
         run: |
           set -euo pipefail
+
+          # Guard: committed wrangler.toml must NOT contain a
+          # [[d1_databases]] block — the workflow appends it with the
+          # real database_id once we know it. wrangler validates
+          # database_id as a UUID at config-parse time, so a stub in
+          # the committed file would break every wrangler command.
+          if grep -q '^\[\[d1_databases\]\]' wrangler.toml; then
+            echo "::error::wrangler.toml already contains [[d1_databases]] — remove the committed block; the workflow appends it."
+            exit 1
+          fi
 
           lookup_id() {
             wrangler d1 list --json 2>/dev/null \
@@ -95,13 +105,27 @@ jobs:
             exit 1
           fi
 
-          echo "Resolved D1 database_id: $DB_ID"
-          sed -i "s/PLACEHOLDER/$DB_ID/" wrangler.toml
-          if grep -q PLACEHOLDER wrangler.toml; then
-            echo "::error::wrangler.toml still contains PLACEHOLDER — sed did not substitute"
+          # Validate the resolved id looks like a UUID before writing.
+          if ! echo "$DB_ID" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+            echo "::error::Resolved DB_ID is not a valid UUID: $DB_ID"
             exit 1
           fi
-          echo "--- patched wrangler.toml ---"
+
+          echo "Resolved D1 database_id: $DB_ID"
+
+          # Append the complete D1 binding block to wrangler.toml.
+          # YAML's `run: |` strips the common base indent, so each line
+          # below is flush-left in the actual shell and the heredoc
+          # writes flush-left TOML keys.
+          {
+            printf '\n[[d1_databases]]\n'
+            printf 'binding = "DB"\n'
+            printf 'database_name = "%s"\n' "$DB_NAME"
+            printf 'database_id = "%s"\n' "$DB_ID"
+            printf 'migrations_dir = "migrations"\n'
+          } >> wrangler.toml
+
+          echo "--- final wrangler.toml ---"
           cat wrangler.toml
 
       - name: Apply D1 migrations (remote)
