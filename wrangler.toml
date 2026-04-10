@@ -1,12 +1,10 @@
-name = "NewInfraGG"
+name = "newinfragg"
 compatibility_date = "2025-01-01"
 pages_build_output_dir = "."
 
-# D1 binding. `database_id` is rewritten by the GitHub Actions workflow
-# at deploy time (see .github/workflows/deploy.yml), because the id only
-# exists after the database has been created on Cloudflare's side.
-[[d1_databases]]
-binding = "DB"
-database_name = "newinfragg-db"
-database_id = "PLACEHOLDER"
-migrations_dir = "migrations"
+# The `[[d1_databases]]` binding is deliberately NOT committed here.
+# wrangler validates `database_id` as a UUID at config-parse time, and
+# the id only exists after the database has been created on Cloudflare's
+# side. The GitHub Actions workflow (.github/workflows/deploy.yml)
+# creates/looks up the database and appends the complete [[d1_databases]]
+# block to this file in-place before running migrations or deploying.
