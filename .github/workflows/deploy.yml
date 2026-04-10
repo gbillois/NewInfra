@@ -22,7 +22,10 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DB_NAME: newinfragg-db
-      PROJECT_NAME: NewInfraGG
+      # Cloudflare Pages project names and the wrangler.toml `name`
+      # field must be lowercase-alphanumeric-with-dashes only, so the
+      # display "NewInfraGG" is stored as "newinfragg".
+      PROJECT_NAME: newinfragg
 
     steps:
       - name: Checkout
