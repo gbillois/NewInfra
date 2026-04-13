@@ -2,6 +2,13 @@ name = "newinfragg"
 compatibility_date = "2025-01-01"
 pages_build_output_dir = "."
 
+# Workers AI binding. Exposed to Pages Functions as `env.AI` so the
+# LLM abstraction in functions/_lib/llm.js can call llama-3.3 without
+# an external API key. Requires Workers AI to be enabled on the
+# Cloudflare account.
+[ai]
+binding = "AI"
+
 # The `[[d1_databases]]` binding is deliberately NOT committed here.
 # wrangler validates `database_id` as a UUID at config-parse time, and
 # the id only exists after the database has been created on Cloudflare's

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cyber News — Connexion</title>
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      .login-box {
+        max-width: 22rem;
+        margin: 6rem auto;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+      .login-box h1 { margin-top: 0; color: var(--accent); font-size: 1.2rem; }
+      .login-box form { display: flex; flex-direction: column; gap: 0.8rem; }
+      .login-box input {
+        background: var(--panel-2); color: var(--fg);
+        border: 1px solid var(--border); border-radius: 5px;
+        padding: 0.55rem 0.7rem; font: inherit;
+      }
+      .login-box .error { color: var(--danger); min-height: 1.2rem; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <div class="login-box">
+      <h1>Cyber News</h1>
+      <p class="muted small">Accès protégé. Saisissez le mot de passe partagé configuré dans Cloudflare (<code>APP_PASSWORD</code>).</p>
+      <form id="login-form">
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="Mot de passe"
+          autocomplete="current-password"
+          required
+          autofocus
+        />
+        <button type="submit" class="primary">Se connecter</button>
+        <div id="login-error" class="error" aria-live="polite"></div>
+      </form>
+    </div>
+    <script>
+      (async () => {
+        // If auth is not enabled on this deployment, or we're already
+        // logged in, skip the login screen entirely.
+        try {
+          const r = await fetch("/api/login");
+          const d = await r.json();
+          if (!d.auth_enabled || d.authenticated) {
+            const next = new URL(location.href).searchParams.get("next") || "/";
+            location.replace(next);
+            return;
+          }
+        } catch (_) {}
+
+        const form = document.getElementById("login-form");
+        const err = document.getElementById("login-error");
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          err.textContent = "";
+          const password = document.getElementById("password").value;
+          try {
+            const res = await fetch("/api/login", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ password }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              err.textContent = data.error || "Erreur";
+              return;
+            }
+            const next = new URL(location.href).searchParams.get("next") || "/";
+            location.replace(next);
+          } catch (ex) {
+            err.textContent = String(ex.message || ex);
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
