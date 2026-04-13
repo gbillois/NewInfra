@@ -21,6 +21,21 @@ const sourcesSection = () => $("#sources");
 const sourcesList = () => $("#sources-list");
 const metaEl = () => $("#meta-line");
 
+// Wrapper around fetch() that bounces the user back to /login.html when
+// the API says the session has expired, instead of swallowing the 401
+// behind a generic "Erreur" toast.
+async function apiFetch(input, init) {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    const next = location.pathname + location.search;
+    location.replace("/login.html?next=" + encodeURIComponent(next));
+    // Throw so the caller's try/catch stops processing while the
+    // navigation is in flight.
+    throw new Error("session expirée");
+  }
+  return res;
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -147,7 +162,7 @@ function renderSources(articleIds) {
     return;
   }
   // Fetch articles by ids in one call
-  fetch("/api/articles?ids=" + encodeURIComponent(articleIds.join(",")))
+  apiFetch("/api/articles?ids=" + encodeURIComponent(articleIds.join(",")))
     .then((r) => r.json())
     .then(({ articles }) => {
       // Map by id to preserve the [A1]=first-article order used in the synthesis
@@ -185,7 +200,7 @@ async function loadSynthesis(period) {
   sourcesSection().hidden = true;
 
   try {
-    const res = await fetch("/api/syntheses?period=" + period);
+    const res = await apiFetch("/api/syntheses?period=" + period);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
     renderSynthesisData(data);
@@ -240,7 +255,7 @@ async function refresh() {
   btn.disabled = true;
   setStatus("Collecte des flux et génération de la synthèse… (peut prendre 30–60s)");
   try {
-    const res = await fetch("/api/refresh", {
+    const res = await apiFetch("/api/refresh", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ period: state.period, collect: true }),

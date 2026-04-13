@@ -44,17 +44,47 @@
     </div>
     <script>
       (async () => {
+        // Only allow same-origin paths as the post-login destination.
+        // Anything else (absolute URLs, protocol-relative "//evil",
+        // or the login page itself) collapses to "/" — otherwise we
+        // risk an open redirect or a redirect loop where the server
+        // bounces us right back to /login.html and we bounce back here.
+        function safeNext() {
+          let raw = "/";
+          try {
+            raw = new URL(location.href).searchParams.get("next") || "/";
+          } catch (_) { return "/"; }
+          if (typeof raw !== "string" || !raw.startsWith("/")) return "/";
+          if (raw.startsWith("//") || raw.startsWith("/\\")) return "/";
+          if (raw === "/login.html" || raw.startsWith("/login.html?")) return "/";
+          return raw;
+        }
+
+        async function readJson(res) {
+          const ct = res.headers.get("content-type") || "";
+          if (!ct.includes("application/json")) return null;
+          try { return await res.json(); } catch (_) { return null; }
+        }
+
         // If auth is not enabled on this deployment, or we're already
-        // logged in, skip the login screen entirely.
+        // logged in, skip the login screen entirely. Be strict about the
+        // shape we accept: an unexpected response leaves us on the form
+        // rather than triggering a navigation that the server may then
+        // redirect back to us.
         try {
-          const r = await fetch("/api/login");
-          const d = await r.json();
-          if (!d.auth_enabled || d.authenticated) {
-            const next = new URL(location.href).searchParams.get("next") || "/";
-            location.replace(next);
-            return;
+          const r = await fetch("/api/login", {
+            headers: { accept: "application/json" },
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (r.ok) {
+            const d = await readJson(r);
+            if (d && (d.auth_enabled === false || d.authenticated === true)) {
+              location.replace(safeNext());
+              return;
+            }
           }
-        } catch (_) {}
+        } catch (_) { /* show the form */ }
 
         const form = document.getElementById("login-form");
         const err = document.getElementById("login-error");
@@ -65,18 +95,21 @@
           try {
             const res = await fetch("/api/login", {
               method: "POST",
-              headers: { "content-type": "application/json" },
+              headers: {
+                "content-type": "application/json",
+                "accept": "application/json",
+              },
+              credentials: "same-origin",
               body: JSON.stringify({ password }),
             });
-            const data = await res.json();
+            const data = (await readJson(res)) || {};
             if (!res.ok) {
-              err.textContent = data.error || "Erreur";
+              err.textContent = data.error || ("Erreur (HTTP " + res.status + ")");
               return;
             }
-            const next = new URL(location.href).searchParams.get("next") || "/";
-            location.replace(next);
+            location.replace(safeNext());
           } catch (ex) {
-            err.textContent = String(ex.message || ex);
+            err.textContent = String((ex && ex.message) || ex);
           }
         });
       })();

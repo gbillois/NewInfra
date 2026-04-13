@@ -65,8 +65,15 @@ export async function verifySession(token, password) {
   if (!Number.isFinite(expiry) || expiry <= Math.floor(Date.now() / 1000)) {
     return false;
   }
-  const expected = await hmac(password, String(expiry));
-  return timingSafeEqual(sig, expected);
+  // Defensive: a malformed signature segment can make crypto.subtle throw.
+  // Treat any failure as "invalid session" rather than letting the
+  // exception bubble up to the middleware.
+  try {
+    const expected = await hmac(password, String(expiry));
+    return timingSafeEqual(sig, expected);
+  } catch {
+    return false;
+  }
 }
 
 export function getCookie(request, name) {
@@ -103,7 +110,7 @@ export function checkPassword(submitted, expected) {
 // unset (fail-open, lets first-time deployments work) OR the session
 // cookie HMAC verifies.
 export async function isAuthenticated(request, env) {
-  if (!env.APP_PASSWORD) return true;
+  if (!env || !env.APP_PASSWORD) return true;
   const token = getCookie(request, "session");
   if (!token) return false;
   return verifySession(token, env.APP_PASSWORD);

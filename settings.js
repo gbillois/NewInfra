@@ -20,11 +20,24 @@ function setStatus(el, msg, kind) {
   el.className = "muted" + (kind === "error" ? " error" : "");
 }
 
+// fetch() wrapper that escapes a 401 by redirecting back to /login.html
+// (preserving the current page as `next`) instead of letting a stale
+// session manifest as confusing "Erreur : Unexpected token < in JSON".
+async function apiFetch(input, init) {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    const next = location.pathname + location.search;
+    location.replace("/login.html?next=" + encodeURIComponent(next));
+    throw new Error("session expirée");
+  }
+  return res;
+}
+
 // -- LLM settings --------------------------------------------------------
 let defaults = {};
 
 async function loadSettings() {
-  const res = await fetch("/api/settings");
+  const res = await apiFetch("/api/settings");
   const data = await res.json();
   defaults = data.defaults || {};
   const s = data.settings || {};
@@ -56,7 +69,7 @@ document.getElementById("llm-form").addEventListener("submit", async (e) => {
   };
   setStatus($("#llm-status"), "Enregistrement…");
   try {
-    const res = await fetch("/api/settings", {
+    const res = await apiFetch("/api/settings", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -71,7 +84,7 @@ document.getElementById("llm-form").addEventListener("submit", async (e) => {
 
 // -- Feeds table ---------------------------------------------------------
 async function loadFeeds() {
-  const res = await fetch("/api/feeds");
+  const res = await apiFetch("/api/feeds");
   const { feeds } = await res.json();
   renderFeeds(feeds);
 }
@@ -94,7 +107,7 @@ function renderFeeds(feeds) {
   tbody.querySelectorAll(".del-btn").forEach((b) => {
     b.addEventListener("click", async () => {
       if (!confirm("Supprimer ce flux (et les articles associés) ?")) return;
-      const res = await fetch("/api/feeds/" + b.dataset.id, { method: "DELETE" });
+      const res = await apiFetch("/api/feeds/" + b.dataset.id, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) {
         setStatus($("#feeds-status"), "Erreur : " + (data.error || res.status), "error");
@@ -110,7 +123,7 @@ function renderFeeds(feeds) {
       const field = inp.dataset.field;
       const body = {};
       body[field] = field === "enabled" ? inp.checked : inp.value;
-      const res = await fetch("/api/feeds/" + id, {
+      const res = await apiFetch("/api/feeds/" + id, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -131,7 +144,7 @@ document.getElementById("add-feed").addEventListener("submit", async (e) => {
   const name = f.name.value.trim();
   const url = f.url.value.trim();
   if (!name || !url) return;
-  const res = await fetch("/api/feeds", {
+  const res = await apiFetch("/api/feeds", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name, url }),
@@ -159,7 +172,7 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
     body = text;
   }
   setStatus($("#feeds-status"), "Import en cours…");
-  const res = await fetch("/api/feeds/import", { method: "POST", headers, body });
+  const res = await apiFetch("/api/feeds/import", { method: "POST", headers, body });
   const data = await res.json();
   if (!res.ok) {
     setStatus($("#feeds-status"), "Erreur : " + (data.error || res.status), "error");
