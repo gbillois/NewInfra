@@ -170,7 +170,24 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
   e.target.value = "";
 });
 
+async function setupLogout() {
+  try {
+    const r = await fetch("/api/login");
+    const d = await r.json();
+    if (!d.auth_enabled) return;
+    const link = document.getElementById("logout-link");
+    if (!link) return;
+    link.hidden = false;
+    link.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await fetch("/api/logout", { method: "POST" });
+      location.href = "/login.html";
+    });
+  } catch (_) {}
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   loadSettings();
   loadFeeds();
+  setupLogout();
 });

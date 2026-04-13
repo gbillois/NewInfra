@@ -56,6 +56,7 @@ Secrets (**Pages project → Settings → Environment variables**, chiffrés) :
 
 | Secret                | Requis si…                 | Rôle |
 |-----------------------|----------------------------|------|
+| `APP_PASSWORD`        | production                 | Mot de passe partagé pour l'accès web. Si absent, l'app est publique (utile pour le premier déploiement). |
 | `CRON_SECRET`         | production                 | Protège `/api/cron/*`. Doit correspondre au secret GitHub Actions. |
 | `ANTHROPIC_API_KEY`   | provider = `anthropic`     | Clé API Anthropic. |
 | `OPENAI_API_KEY`      | provider = `openai`        | Clé API OpenAI. |

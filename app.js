@@ -263,6 +263,22 @@ async function refresh() {
   }
 }
 
+async function setupLogout() {
+  try {
+    const r = await fetch("/api/login");
+    const d = await r.json();
+    if (!d.auth_enabled) return;
+    const link = document.getElementById("logout-link");
+    if (!link) return;
+    link.hidden = false;
+    link.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await fetch("/api/logout", { method: "POST" });
+      location.href = "/login.html";
+    });
+  } catch (_) {}
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".periods .period").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -275,4 +291,5 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#refresh-btn").addEventListener("click", refresh);
   loadSynthesis("day");
+  setupLogout();
 });

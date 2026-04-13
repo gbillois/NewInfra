@@ -210,32 +210,22 @@ jobs:
           # Give the edge a few seconds to propagate the new deployment.
           sleep 5
 
-          # 1. Home page is the cyber news app (not the old "hello" stub).
-          HTML=$(curl -fsSL --retry 5 --retry-delay 3 "$URL")
+          # 1. Login page is always reachable (it's whitelisted by the
+          #    middleware so the auth gate can't lock anyone out).
+          HTML=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/login.html")
           if ! echo "$HTML" | grep -q "Cyber News"; then
-            echo "::error::HTML at $URL is missing 'Cyber News'"
+            echo "::error::HTML at $URL/login.html is missing 'Cyber News'"
             echo "--- response ---"
             echo "$HTML"
             exit 1
           fi
 
-          # 2. /api/feeds returns JSON with a `feeds` array (DB reachable
-          #    and migration 0002 applied).
-          FEEDS=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/feeds")
-          if ! echo "$FEEDS" | grep -q '"feeds"'; then
-            echo "::error::$URL/api/feeds did not return a feeds list"
+          # 2. /api/health is public and reports DB binding + auth flag.
+          HLTH=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/health")
+          if ! echo "$HLTH" | grep -q '"db":true'; then
+            echo "::error::$URL/api/health did not report db=true"
             echo "--- response ---"
-            echo "$FEEDS"
-            exit 1
-          fi
-
-          # 3. /api/syntheses?period=day returns a valid envelope even when
-          #    empty (exercises period math + D1 query).
-          SYN=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/syntheses?period=day")
-          if ! echo "$SYN" | grep -q '"period_start"'; then
-            echo "::error::$URL/api/syntheses?period=day did not return a period envelope"
-            echo "--- response ---"
-            echo "$SYN"
+            echo "$HLTH"
             exit 1
           fi
 
