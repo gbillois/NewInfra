@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - claude/cloudflare-pages-d1-setup-GNlHm
+      - claude/cyber-news-aggregator-alYSB
   workflow_dispatch:
 
 concurrency:
@@ -209,21 +210,32 @@ jobs:
           # Give the edge a few seconds to propagate the new deployment.
           sleep 5
 
-          # 1. HTML has "Hello from html"
+          # 1. Home page is the cyber news app (not the old "hello" stub).
           HTML=$(curl -fsSL --retry 5 --retry-delay 3 "$URL")
-          if ! echo "$HTML" | grep -q "Hello from html"; then
-            echo "::error::HTML at $URL is missing 'Hello from html'"
+          if ! echo "$HTML" | grep -q "Cyber News"; then
+            echo "::error::HTML at $URL is missing 'Cyber News'"
             echo "--- response ---"
             echo "$HTML"
             exit 1
           fi
 
-          # 2. /api/content returns "hello from DB"
-          API=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/content")
-          if ! echo "$API" | grep -q "hello from DB"; then
-            echo "::error::$URL/api/content did not return 'hello from DB'"
+          # 2. /api/feeds returns JSON with a `feeds` array (DB reachable
+          #    and migration 0002 applied).
+          FEEDS=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/feeds")
+          if ! echo "$FEEDS" | grep -q '"feeds"'; then
+            echo "::error::$URL/api/feeds did not return a feeds list"
             echo "--- response ---"
-            echo "$API"
+            echo "$FEEDS"
+            exit 1
+          fi
+
+          # 3. /api/syntheses?period=day returns a valid envelope even when
+          #    empty (exercises period math + D1 query).
+          SYN=$(curl -fsSL --retry 5 --retry-delay 3 "$URL/api/syntheses?period=day")
+          if ! echo "$SYN" | grep -q '"period_start"'; then
+            echo "::error::$URL/api/syntheses?period=day did not return a period envelope"
+            echo "--- response ---"
+            echo "$SYN"
             exit 1
           fi
 

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cyber News — Paramètres</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap">
+        <h1><a href="/">Cyber News</a></h1>
+        <nav>
+          <a href="/">Synthèse</a>
+          <a href="/settings.html" class="active">Paramètres</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="card">
+        <h2>Moteur d'analyse (LLM)</h2>
+        <p class="muted">
+          Les clés API (<code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>)
+          sont stockées en secret Cloudflare, pas en base. Sélectionnez ici le
+          fournisseur et le modèle.
+        </p>
+        <form id="llm-form" class="grid">
+          <label>
+            Fournisseur
+            <select name="llm_provider" id="llm_provider">
+              <option value="workers-ai">Workers AI (Cloudflare)</option>
+              <option value="anthropic">Anthropic Claude</option>
+              <option value="openai">OpenAI GPT</option>
+            </select>
+          </label>
+          <label>
+            Modèle
+            <input type="text" name="llm_model" id="llm_model" />
+          </label>
+          <label>
+            Langue de la synthèse
+            <select name="language" id="language">
+              <option value="fr">Français</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <div class="row">
+            <button type="submit" class="primary">Enregistrer</button>
+            <span id="llm-status" class="muted"></span>
+          </div>
+          <div id="capabilities" class="muted small"></div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Flux RSS</h2>
+        <form id="add-feed" class="row">
+          <input type="text" name="name" placeholder="Nom" required />
+          <input type="url" name="url" placeholder="https://..." required />
+          <button type="submit">Ajouter</button>
+        </form>
+        <table id="feeds-table">
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>URL</th>
+              <th>Activé</th>
+              <th>Dernière collecte</th>
+              <th>Statut</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="row">
+          <a id="export-opml" href="/api/feeds/export?format=opml" class="btn">Exporter OPML</a>
+          <a id="export-json" href="/api/feeds/export?format=json" class="btn">Exporter JSON</a>
+          <label class="btn file-btn">
+            Importer OPML / JSON
+            <input type="file" id="import-file" accept=".opml,.xml,.json,application/json,text/xml" hidden />
+          </label>
+          <span id="feeds-status" class="muted"></span>
+        </div>
+      </section>
+    </main>
+
+    <script src="/settings.js" defer></script>
+  </body>
+</html>
