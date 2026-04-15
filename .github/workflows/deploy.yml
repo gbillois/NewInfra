@@ -6,6 +6,7 @@ on:
       - main
       - claude/cloudflare-pages-d1-setup-GNlHm
       - claude/cyber-news-aggregator-alYSB
+      - claude/vector-article-consolidation-73XvG
   workflow_dispatch:
 
 concurrency:
@@ -23,6 +24,14 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DB_NAME: newinfragg-db
+      # Vectorize index backing the vector consolidation mode.
+      # Dimensions/metric are tied to the default embedding model
+      # (@cf/baai/bge-m3 → 1024 dims, cosine). If the user later selects
+      # the OpenAI provider, a second index (1536 dims) must be created
+      # manually — the workflow only manages the default one.
+      VECTORIZE_INDEX: newinfragg-vectors-bge-m3
+      VECTORIZE_DIMS: "1024"
+      VECTORIZE_METRIC: cosine
       # Cloudflare Pages project names and the wrangler.toml `name`
       # field must be lowercase-alphanumeric-with-dashes only, so the
       # display "NewInfraGG" is stored as "newinfragg".
@@ -124,6 +133,59 @@ jobs:
             printf 'database_name = "%s"\n' "$DB_NAME"
             printf 'database_id = "%s"\n' "$DB_ID"
             printf 'migrations_dir = "migrations"\n'
+          } >> wrangler.toml
+
+          echo "--- final wrangler.toml ---"
+          cat wrangler.toml
+
+      - name: Ensure Vectorize index exists and append binding to wrangler.toml
+        id: vectorize
+        run: |
+          set -euo pipefail
+
+          # Same guard as for D1: a committed [[vectorize]] block would
+          # let wrangler read a stale binding and defeat the point of
+          # appending the live one here.
+          if grep -q '^\[\[vectorize\]\]' wrangler.toml; then
+            echo "::error::wrangler.toml already contains [[vectorize]] — remove the committed block; the workflow appends it."
+            exit 1
+          fi
+
+          lookup_index() {
+            wrangler vectorize list --json 2>/dev/null \
+              | jq -r --arg n "$VECTORIZE_INDEX" \
+                  '.[] | select(.name==$n) | .name' \
+              | head -1
+          }
+
+          FOUND="$(lookup_index || true)"
+
+          if [ -z "${FOUND}" ]; then
+            echo "Vectorize index '$VECTORIZE_INDEX' not found — creating it..."
+            if CREATE_OUT=$(wrangler vectorize create "$VECTORIZE_INDEX" \
+                              --dimensions="$VECTORIZE_DIMS" \
+                              --metric="$VECTORIZE_METRIC" 2>&1); then
+              echo "$CREATE_OUT"
+            else
+              echo "$CREATE_OUT"
+              if echo "$CREATE_OUT" | grep -qiE "already exists|name is already taken"; then
+                echo "Race: index appeared between list and create — continuing."
+              else
+                echo "::error::wrangler vectorize create failed — see log above"
+                exit 1
+              fi
+            fi
+          else
+            echo "Reusing existing Vectorize index '$VECTORIZE_INDEX'."
+          fi
+
+          # Append the binding. Unlike D1, Vectorize bindings reference
+          # the index by name (no UUID), so there's no extra validation
+          # step — the name we just ensured exists is what we write.
+          {
+            printf '\n[[vectorize]]\n'
+            printf 'binding = "VECTORIZE"\n'
+            printf 'index_name = "%s"\n' "$VECTORIZE_INDEX"
           } >> wrangler.toml
 
           echo "--- final wrangler.toml ---"
