@@ -10,6 +10,7 @@ const PERIOD_LABELS = {
 
 const state = {
   period: "day",
+  mode: localStorage.getItem("consolidation_mode") || "llm",
   synthesis: null,
   sources: [],
 };
@@ -193,14 +194,17 @@ function renderSources(articleIds) {
     });
 }
 
-async function loadSynthesis(period) {
-  state.period = period;
+async function loadSynthesis(period, mode) {
+  if (period) state.period = period;
+  if (mode) state.mode = mode;
   setStatus("Chargement de la synthèse…");
   synthesisEl().innerHTML = '<div class="placeholder">Chargement…</div>';
   sourcesSection().hidden = true;
 
   try {
-    const res = await apiFetch("/api/syntheses?period=" + period);
+    const res = await apiFetch(
+      "/api/syntheses?period=" + state.period + "&mode=" + encodeURIComponent(state.mode),
+    );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
     renderSynthesisData(data);
@@ -211,16 +215,23 @@ async function loadSynthesis(period) {
   }
 }
 
+const MODE_LABELS = {
+  llm: "LLM",
+  "vector-narrative": "vecteur + narratif",
+  "vector-raw": "vecteur brut",
+};
+
 function renderSynthesisData(data) {
-  const { synthesis, article_count_in_window, period, period_start, period_end } = data;
+  const { synthesis, article_count_in_window, period, period_start, period_end, mode } = data;
   const label = PERIOD_LABELS[period] || period;
+  const modeLabel = MODE_LABELS[mode] || mode;
   const from = new Date(period_start * 1000).toISOString().slice(0, 10);
   const to = new Date(period_end * 1000).toISOString().slice(0, 10);
 
   if (!synthesis) {
     synthesisEl().innerHTML =
-      `<h2>Synthèse — ${escapeHtml(label)}</h2>` +
-      `<p class="muted">Du ${from} au ${to}. Aucune synthèse générée pour cette période.</p>` +
+      `<h2>Synthèse — ${escapeHtml(label)} · ${escapeHtml(modeLabel)}</h2>` +
+      `<p class="muted">Du ${from} au ${to}. Aucune synthèse générée pour ce mode.</p>` +
       `<p>${article_count_in_window} article${article_count_in_window > 1 ? "s" : ""} collecté${
         article_count_in_window > 1 ? "s" : ""
       } dans la fenêtre. Cliquez sur « Rafraîchir la synthèse » pour en produire une.</p>`;
@@ -230,7 +241,7 @@ function renderSynthesisData(data) {
 
   synthesisEl().innerHTML =
     `<header style="margin-bottom:1rem">` +
-    `<h2>Synthèse — ${escapeHtml(label)}</h2>` +
+    `<h2>Synthèse — ${escapeHtml(label)} · ${escapeHtml(modeLabel)}</h2>` +
     `<div class="muted small">Du ${from} au ${to} · ${synthesis.article_count} article${
       synthesis.article_count > 1 ? "s" : ""
     } analysé${synthesis.article_count > 1 ? "s" : ""}</div>` +
@@ -246,19 +257,23 @@ function renderSynthesisData(data) {
   renderSources(ids);
 
   metaEl().textContent =
-    `Généré le ${formatDateTime(synthesis.created_at)}` +
+    `Généré le ${formatDateTime(synthesis.created_at)} · mode ${modeLabel}` +
     (synthesis.provider ? ` · ${synthesis.provider}/${synthesis.model || ""}` : "");
 }
 
 async function refresh() {
   const btn = $("#refresh-btn");
   btn.disabled = true;
-  setStatus("Collecte des flux et génération de la synthèse… (peut prendre 30–60s)");
+  const longMsg =
+    state.mode === "llm"
+      ? "Collecte des flux et génération de la synthèse… (peut prendre 30–60s)"
+      : "Collecte, récupération du texte intégral, embedding et clustering… (peut prendre 1–3 min au premier passage)";
+  setStatus(longMsg);
   try {
     const res = await apiFetch("/api/refresh", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ period: state.period, collect: true }),
+      body: JSON.stringify({ period: state.period, mode: state.mode, collect: true }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
@@ -269,8 +284,14 @@ async function refresh() {
         msg += ` ${data.collect.errors.length} flux en erreur.`;
       }
     }
+    if (data.synthesis && data.synthesis.cluster_count !== undefined) {
+      msg += ` ${data.synthesis.cluster_count} cluster(s), ${data.synthesis.singletons || 0} isolé(s).`;
+      if (data.synthesis.fulltext) {
+        msg += ` Texte intégral : ${data.synthesis.fulltext.ok}/${data.synthesis.fulltext.attempted}.`;
+      }
+    }
     setStatus(msg, "ok");
-    await loadSynthesis(state.period);
+    await loadSynthesis(state.period, state.mode);
   } catch (err) {
     setStatus("Erreur : " + err.message, "error");
   } finally {
@@ -294,6 +315,12 @@ async function setupLogout() {
   } catch (_) {}
 }
 
+function selectMode(mode) {
+  document.querySelectorAll(".modes .mode").forEach((b) =>
+    b.setAttribute("aria-selected", b.dataset.mode === mode ? "true" : "false"),
+  );
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".periods .period").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -301,10 +328,19 @@ document.addEventListener("DOMContentLoaded", () => {
         b.setAttribute("aria-selected", "false"),
       );
       btn.setAttribute("aria-selected", "true");
-      loadSynthesis(btn.dataset.period);
+      loadSynthesis(btn.dataset.period, state.mode);
     });
   });
+  document.querySelectorAll(".modes .mode").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selectMode(btn.dataset.mode);
+      localStorage.setItem("consolidation_mode", btn.dataset.mode);
+      loadSynthesis(state.period, btn.dataset.mode);
+    });
+  });
+  // Restore persisted mode selection on load.
+  selectMode(state.mode);
   $("#refresh-btn").addEventListener("click", refresh);
-  loadSynthesis("day");
+  loadSynthesis("day", state.mode);
   setupLogout();
 });

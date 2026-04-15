@@ -40,14 +40,16 @@ main { padding: 1.5rem 0 3rem; }
   display: flex; justify-content: space-between; align-items: center;
   gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;
 }
-.periods { display: flex; gap: 0.25rem; flex-wrap: wrap; }
-.periods .period {
+.periods, .modes { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.periods .period, .modes .mode {
   background: var(--panel); border: 1px solid var(--border); color: var(--fg);
   padding: 0.45rem 0.8rem; border-radius: 6px; cursor: pointer; font: inherit;
 }
-.periods .period[aria-selected="true"] {
+.periods .period[aria-selected="true"],
+.modes .mode[aria-selected="true"] {
   background: var(--accent); color: #001322; border-color: var(--accent);
 }
+.modes .mode { font-size: 0.9em; }
 button.primary, a.btn.primary {
   background: var(--accent); color: #001322; border: 1px solid var(--accent);
   padding: 0.5rem 0.9rem; border-radius: 6px; cursor: pointer; font: inherit;
