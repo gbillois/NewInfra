@@ -30,6 +30,10 @@ export function pickEmbeddingConfig(settings) {
       model: settings.vector_embed_model_openai || OPENAI_EMBED_MODEL,
       dim: OPENAI_EMBED_DIM,
       indexName: "articles-openai-small",
+      // Cloudflare binding for the 1536-dim Vectorize index; see
+      // .github/workflows/deploy.yml which provisions the index and
+      // appends the [[vectorize]] block at deploy time.
+      binding: "VECTORIZE_OPENAI",
     };
   }
   // workers-ai and anthropic → Workers AI bge-m3
@@ -38,7 +42,23 @@ export function pickEmbeddingConfig(settings) {
     model: settings.vector_embed_model_workers_ai || WORKERS_AI_EMBED_MODEL,
     dim: WORKERS_AI_EMBED_DIM,
     indexName: "articles-bge-m3",
+    binding: "VECTORIZE",
   };
+}
+
+// Resolve the Cloudflare Vectorize binding that matches the active
+// embedding config. Throws a descriptive error when the binding is
+// missing so the UI can surface a clear "provisioning not done" hint.
+export function resolveVectorizeBinding(env, cfg) {
+  const v = env[cfg.binding];
+  if (!v) {
+    throw new Error(
+      `Vector mode requires the '${cfg.binding}' binding (${cfg.dim}-dim, cosine). ` +
+        `Run 'wrangler vectorize create <name> --dimensions=${cfg.dim} --metric=cosine' ` +
+        `and bind it as ${cfg.binding} in wrangler.toml — the deploy workflow does this automatically.`,
+    );
+  }
+  return v;
 }
 
 function truncate(s) {

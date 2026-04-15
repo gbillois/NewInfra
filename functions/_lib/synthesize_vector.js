@@ -11,7 +11,7 @@
 //     → persist in the `syntheses` table alongside the existing LLM mode
 
 import { generate } from "./llm.js";
-import { embed, pickEmbeddingConfig } from "./embed.js";
+import { embed, pickEmbeddingConfig, resolveVectorizeBinding } from "./embed.js";
 import { clusterByThreshold } from "./cluster.js";
 import { fetchFulltext } from "./fulltext.js";
 import {
@@ -348,13 +348,9 @@ async function hydrateEmbeddings(env, settings, articles) {
   const missing = articles.filter((a) => !existingIds.has(a.id));
   if (!missing.length) return { ...cfg, embedded: 0 };
 
-  if (!env.VECTORIZE) {
-    throw new Error(
-      "Vector mode requires the VECTORIZE binding. Run " +
-        `'wrangler vectorize create <index> --dimensions=${cfg.dim} --metric=cosine' ` +
-        "and bind it as VECTORIZE in wrangler.toml.",
-    );
-  }
+  // Pick the Vectorize binding that matches the embedding dimension
+  // (VECTORIZE for bge-m3 / 1024d, VECTORIZE_OPENAI for openai / 1536d).
+  const vectorize = resolveVectorizeBinding(env, cfg);
 
   const texts = missing.map(buildEmbeddingInput);
   const { vectors, model, dim, indexName } = await embed(env, settings, texts);
@@ -372,7 +368,7 @@ async function hydrateEmbeddings(env, settings, articles) {
     },
   }));
   for (let i = 0; i < records.length; i += UPSERT_BATCH) {
-    await env.VECTORIZE.upsert(records.slice(i, i + UPSERT_BATCH));
+    await vectorize.upsert(records.slice(i, i + UPSERT_BATCH));
   }
 
   // Record in D1 so subsequent refreshes skip these.
@@ -386,18 +382,15 @@ async function hydrateEmbeddings(env, settings, articles) {
 // Pull the vectors for every article in the period (including ones we
 // embedded in earlier refreshes). If Vectorize returns fewer vectors
 // than requested, the missing ones are treated as absent and dropped.
-async function loadVectorsForArticles(env, articles) {
-  if (!env.VECTORIZE) {
-    throw new Error(
-      "Vector mode requires the VECTORIZE binding (see README for wrangler config).",
-    );
-  }
+async function loadVectorsForArticles(env, settings, articles) {
+  const cfg = pickEmbeddingConfig(settings);
+  const vectorize = resolveVectorizeBinding(env, cfg);
   const ids = articles.map((a) => String(a.id));
   const BATCH = 200;
   const vectorsById = new Map();
   for (let i = 0; i < ids.length; i += BATCH) {
     const chunk = ids.slice(i, i + BATCH);
-    const res = await env.VECTORIZE.getByIds(chunk);
+    const res = await vectorize.getByIds(chunk);
     const arr = Array.isArray(res) ? res : res?.vectors || [];
     for (const v of arr) {
       if (v && v.id != null && Array.isArray(v.values)) {
@@ -453,7 +446,7 @@ export async function synthesizeVectorPeriod(env, period, mode, refEpochSec) {
   const embedInfo = await hydrateEmbeddings(env, settings, articles);
 
   // 3. Pull all vectors for the period.
-  const vectorsById = await loadVectorsForArticles(env, articles);
+  const vectorsById = await loadVectorsForArticles(env, settings, articles);
 
   // Filter to articles whose vector we actually have. Vectorize may lag
   // its own upsert by a few hundred ms in pathological cases; articles
