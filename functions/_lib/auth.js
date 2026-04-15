@@ -1,47 +1,26 @@
-// Tiny auth helper: sign/verify a session token with HMAC-SHA256.
-// The signing key is APP_PASSWORD itself — no separate session secret
-// to manage. Token format: "<expiry>.<b64url(hmac)>" where expiry is
-// a unix timestamp (seconds). Stored in the Cookie header as `session=...`.
+// Tiny auth helper. APP_PASSWORD is the only secret — there is no
+// separate session store and no separate signing key. On login we set
+// a cookie whose value is SHA-256(APP_PASSWORD). Middleware recomputes
+// the hash on every request and compares in constant time.
 //
-// We intentionally keep this stateless (no server-side session table):
-// rotating APP_PASSWORD invalidates every existing session, which is
-// the behaviour you want after a leak.
+// Rotating APP_PASSWORD invalidates every outstanding cookie (which is
+// the behaviour you want after a leak). Session lifetime is bounded by
+// the cookie's Max-Age.
 
 const SESSION_TTL_SECS = 30 * 24 * 3600; // 30 days
 
-function b64urlEncode(bytes) {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function b64urlDecode(s) {
-  s = s.replace(/-/g, "+").replace(/_/g, "/");
-  while (s.length % 4) s += "=";
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function hmac(secret, msg) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
+async function hashPassword(password) {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(String(password)),
   );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(msg),
-  );
-  return b64urlEncode(new Uint8Array(sig));
+  let hex = "";
+  for (const b of new Uint8Array(buf)) hex += b.toString(16).padStart(2, "0");
+  return hex;
 }
 
-// Constant-time string compare to avoid timing oracles on the shared
-// password and on the HMAC output.
+// Constant-time string compare — avoids timing oracles on the shared
+// password and on the session hash.
 function timingSafeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
   if (a.length !== b.length) return false;
@@ -51,29 +30,7 @@ function timingSafeEqual(a, b) {
 }
 
 export async function issueSession(password) {
-  const expiry = Math.floor(Date.now() / 1000) + SESSION_TTL_SECS;
-  const sig = await hmac(password, String(expiry));
-  return { token: `${expiry}.${sig}`, maxAge: SESSION_TTL_SECS };
-}
-
-export async function verifySession(token, password) {
-  if (!token || typeof token !== "string") return false;
-  const dot = token.indexOf(".");
-  if (dot < 0) return false;
-  const expiry = Number(token.slice(0, dot));
-  const sig = token.slice(dot + 1);
-  if (!Number.isFinite(expiry) || expiry <= Math.floor(Date.now() / 1000)) {
-    return false;
-  }
-  // Defensive: a malformed signature segment can make crypto.subtle throw.
-  // Treat any failure as "invalid session" rather than letting the
-  // exception bubble up to the middleware.
-  try {
-    const expected = await hmac(password, String(expiry));
-    return timingSafeEqual(sig, expected);
-  } catch {
-    return false;
-  }
+  return { token: await hashPassword(password), maxAge: SESSION_TTL_SECS };
 }
 
 export function getCookie(request, name) {
@@ -86,15 +43,14 @@ export function getCookie(request, name) {
 }
 
 export function sessionCookieHeader(token, maxAge) {
-  const attrs = [
+  return [
     `session=${token}`,
-    `Path=/`,
-    `HttpOnly`,
-    `Secure`,
-    `SameSite=Lax`,
+    "Path=/",
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax",
     `Max-Age=${maxAge}`,
-  ];
-  return attrs.join("; ");
+  ].join("; ");
 }
 
 export function clearSessionCookieHeader() {
@@ -106,12 +62,14 @@ export function checkPassword(submitted, expected) {
   return timingSafeEqual(String(submitted || ""), String(expected));
 }
 
-// Is the given request authenticated? Returns true when APP_PASSWORD is
-// unset (fail-open, lets first-time deployments work) OR the session
-// cookie HMAC verifies.
+// Is the given request authenticated? Fail-open when APP_PASSWORD is
+// unset (so first-time deploys are usable before the operator has
+// configured the secret); otherwise the `session` cookie must equal
+// SHA-256(APP_PASSWORD).
 export async function isAuthenticated(request, env) {
   if (!env || !env.APP_PASSWORD) return true;
   const token = getCookie(request, "session");
   if (!token) return false;
-  return verifySession(token, env.APP_PASSWORD);
+  const expected = await hashPassword(env.APP_PASSWORD);
+  return timingSafeEqual(token, expected);
 }
