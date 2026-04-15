@@ -144,8 +144,15 @@ jobs:
 
       - name: Ensure Vectorize indexes exist and append bindings to wrangler.toml
         id: vectorize
+        # Vectorize requires the Workers Paid plan and the feature to be
+        # enabled on the account. A failure here MUST NOT break the
+        # deploy: the legacy LLM consolidation mode works without any
+        # Vectorize binding, so we degrade gracefully by simply not
+        # appending the [[vectorize]] block(s) for indexes that could
+        # not be provisioned. The vector consolidation modes will then
+        # return a clear runtime error until the account is set up.
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           # Same guard as for D1: a committed [[vectorize]] block would
           # let wrangler read a stale binding and defeat the point of
@@ -155,55 +162,62 @@ jobs:
             exit 1
           fi
 
-          # Cache the index list once; wrangler vectorize list is a
-          # network call per invocation and we'll consult it for both
-          # indexes.
-          INDEX_LIST="$(wrangler vectorize list --json 2>/dev/null || echo '[]')"
+          # Cache the index list once. `wrangler vectorize list --json`
+          # output shape varies across wrangler minor versions (some
+          # wrap in {"indexes": [...]}, others return a bare array), so
+          # we normalise via `(.indexes // .)`.
+          INDEX_LIST_RAW="$(wrangler vectorize list --json 2>&1 || true)"
+          INDEX_LIST="$(echo "$INDEX_LIST_RAW" | jq '(.indexes // .) // []' 2>/dev/null || echo '[]')"
 
+          # ensure_index NAME DIMS METRIC
+          # Prints progress and returns 0 on success (index exists or
+          # was created), non-zero otherwise. Never exits the step.
           ensure_index() {
             local name="$1" dims="$2" metric="$3"
-            local found
+            local found create_out
             found=$(echo "$INDEX_LIST" | jq -r --arg n "$name" \
-                      '.[] | select(.name==$n) | .name' | head -1 || true)
+                      '.[] | select(.name==$n) | .name' 2>/dev/null | head -1 || true)
             if [ -n "$found" ]; then
               echo "Reusing existing Vectorize index '$name'."
               return 0
             fi
 
             echo "Vectorize index '$name' not found — creating it..."
-            local create_out
             if create_out=$(wrangler vectorize create "$name" \
                               --dimensions="$dims" \
                               --metric="$metric" 2>&1); then
               echo "$create_out"
-            else
-              echo "$create_out"
-              if echo "$create_out" | grep -qiE "already exists|name is already taken"; then
-                echo "Race: index appeared between list and create — continuing."
-              else
-                echo "::error::wrangler vectorize create '$name' failed — see log above"
-                return 1
-              fi
+              return 0
             fi
+            echo "$create_out"
+            if echo "$create_out" | grep -qiE "already exists|name is already taken"; then
+              echo "Race: index appeared between list and create — continuing."
+              return 0
+            fi
+            echo "::warning::Could not create Vectorize index '$name'. The vector consolidation mode will be unavailable until this is resolved. Raw output above."
+            return 1
           }
 
-          # Default index: Workers AI bge-m3 (also used for the Anthropic
-          # provider since Anthropic does not expose an embedding model).
-          ensure_index "$VECTORIZE_INDEX" "$VECTORIZE_DIMS" "$VECTORIZE_METRIC"
-          # OpenAI index: used when the configured LLM provider is openai.
-          ensure_index "$VECTORIZE_INDEX_OPENAI" "$VECTORIZE_DIMS_OPENAI" "$VECTORIZE_METRIC"
+          append_binding() {
+            local binding="$1" name="$2"
+            {
+              printf '\n[[vectorize]]\n'
+              printf 'binding = "%s"\n' "$binding"
+              printf 'index_name = "%s"\n' "$name"
+            } >> wrangler.toml
+            echo "Appended [[vectorize]] binding=$binding index_name=$name"
+          }
 
-          # Append bindings. Unlike D1, Vectorize bindings reference the
-          # index by name (no UUID), so there's no extra validation —
-          # the names we just ensured exist are what we write.
-          {
-            printf '\n[[vectorize]]\n'
-            printf 'binding = "VECTORIZE"\n'
-            printf 'index_name = "%s"\n' "$VECTORIZE_INDEX"
-            printf '\n[[vectorize]]\n'
-            printf 'binding = "VECTORIZE_OPENAI"\n'
-            printf 'index_name = "%s"\n' "$VECTORIZE_INDEX_OPENAI"
-          } >> wrangler.toml
+          # Default index: Workers AI bge-m3 (also used when the selected
+          # LLM provider is Anthropic, since Anthropic has no first-party
+          # embedding API).
+          if ensure_index "$VECTORIZE_INDEX" "$VECTORIZE_DIMS" "$VECTORIZE_METRIC"; then
+            append_binding "VECTORIZE" "$VECTORIZE_INDEX"
+          fi
+          # OpenAI index: used when the LLM provider is openai.
+          if ensure_index "$VECTORIZE_INDEX_OPENAI" "$VECTORIZE_DIMS_OPENAI" "$VECTORIZE_METRIC"; then
+            append_binding "VECTORIZE_OPENAI" "$VECTORIZE_INDEX_OPENAI"
+          fi
 
           echo "--- final wrangler.toml ---"
           cat wrangler.toml
