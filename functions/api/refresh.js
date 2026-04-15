@@ -1,17 +1,20 @@
 // POST /api/refresh  { period: "day"|"week"|"fortnight"|"month",
+//                      mode?: "llm"|"vector-raw"|"vector-narrative",
 //                      collect?: boolean }
 // Public endpoint called by the "Rafraîchir" button in the UI.
 // - If `collect` is true (default), fetches every enabled feed first.
-// - Then regenerates the synthesis for the requested period.
-// A simple server-side cooldown (30s per period) prevents accidental
-// double-clicks from triggering repeat LLM calls.
+// - Then regenerates the synthesis for the requested (period, mode).
+// A simple server-side cooldown (30s per (period, mode)) prevents
+// accidental double-clicks from triggering repeat LLM/embed calls.
 
 import { collectAllFeeds } from "../_lib/collect.js";
 import { synthesizePeriod } from "../_lib/synthesize.js";
+import { synthesizeVectorPeriod } from "../_lib/synthesize_vector.js";
 import { isValidPeriod, periodBounds } from "../_lib/period.js";
 import { getSynthesis } from "../_lib/db.js";
 
 const COOLDOWN_SECS = 30;
+const VALID_MODES = new Set(["llm", "vector-raw", "vector-narrative"]);
 
 export async function onRequest({ request, env }) {
   if (request.method !== "POST") {
@@ -26,10 +29,14 @@ export async function onRequest({ request, env }) {
   if (!isValidPeriod(period)) {
     return Response.json({ error: "invalid period" }, { status: 400 });
   }
+  const mode = body.mode || "llm";
+  if (!VALID_MODES.has(mode)) {
+    return Response.json({ error: "invalid mode" }, { status: 400 });
+  }
   const doCollect = body.collect !== false;
 
   const bounds = periodBounds(period);
-  const existing = await getSynthesis(env.DB, period, bounds.start);
+  const existing = await getSynthesis(env.DB, period, bounds.start, mode);
   if (existing && existing.created_at) {
     const age = Math.floor(Date.now() / 1000) - existing.created_at;
     if (age < COOLDOWN_SECS) {
@@ -50,7 +57,10 @@ export async function onRequest({ request, env }) {
   }
 
   try {
-    const synth = await synthesizePeriod(env, period);
+    const synth =
+      mode === "llm"
+        ? await synthesizePeriod(env, period)
+        : await synthesizeVectorPeriod(env, period, mode);
     return Response.json({
       elapsed_ms: Date.now() - t0,
       collect: collectReport && {
