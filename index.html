@@ -26,6 +26,20 @@
           <button class="period" data-period="fortnight">Quinzaine (15j)</button>
           <button class="period" data-period="month">Mois (30j)</button>
         </div>
+        <div class="modes" role="tablist" aria-label="Mode de consolidation">
+          <button class="mode" data-mode="llm" aria-selected="true"
+                  title="Les articles sont envoyés au LLM qui les regroupe et les résume dans un même prompt.">
+            LLM
+          </button>
+          <button class="mode" data-mode="vector-narrative" aria-selected="false"
+                  title="Les articles sont vectorisés et regroupés par similarité, puis le LLM résume chaque cluster.">
+            Vecteur + narratif
+          </button>
+          <button class="mode" data-mode="vector-raw" aria-selected="false"
+                  title="Les articles sont vectorisés et regroupés par similarité ; rendu brut sans LLM.">
+            Vecteur (brut)
+          </button>
+        </div>
         <div class="actions">
           <button id="refresh-btn" class="primary">↻ Rafraîchir la synthèse</button>
         </div>
