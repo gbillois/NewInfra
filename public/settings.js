@@ -26,7 +26,8 @@ async function loadStatus() {
     <div class="stat"><span class="v">${s.duplicates ?? 0}</span><span class="l">doublons détectés</span></div>
     <div class="stat"><span class="v">${s.feeds ?? 0}</span><span class="l">flux actifs</span></div>
     <div class="stat"><span class="v" style="font-size:14px;line-height:2">${last}</span><span class="l">dernière collecte</span></div>
-    <div class="stat"><span class="v" style="font-size:14px;line-height:2">${esc(s.provider)}</span><span class="l">moteur IA</span></div>`;
+    <div class="stat"><span class="v" style="font-size:14px;line-height:2">${esc(s.configured_provider)}</span><span class="l">moteur configuré</span></div>
+    <div class="stat"><span class="v" style="font-size:14px;line-height:2">${esc([s.last_trends_provider, s.last_trends_model].filter(Boolean).join(' / ') || '—')}</span><span class="l">dernières tendances</span></div>`;
 }
 
 async function loadFeeds() {

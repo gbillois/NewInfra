@@ -90,9 +90,12 @@ async function handleApi(request: Request, url: URL, env: Env, ctx: ExecutionCon
               (SELECT COUNT(*) FROM articles WHERE duplicate_of IS NOT NULL) AS duplicates,
               (SELECT COUNT(*) FROM feeds WHERE enabled = 1) AS feeds,
               (SELECT MAX(last_fetched_at) FROM feeds) AS last_collect,
-              (SELECT MAX(generated_at) FROM trend_sets) AS last_trends`
+              (SELECT MAX(generated_at) FROM trend_sets) AS last_trends,
+              (SELECT provider FROM trend_sets ORDER BY generated_at DESC LIMIT 1) AS last_trends_provider,
+              (SELECT model FROM trend_sets ORDER BY generated_at DESC LIMIT 1) AS last_trends_model`
     ).first();
-    return json({ ...counts, provider: llmProvider(env), auth: Boolean(env.APP_PASSWORD) });
+    const provider = llmProvider(env);
+    return json({ ...counts, provider, configured_provider: provider, auth: Boolean(env.APP_PASSWORD) });
   }
 
   // ---- tendances

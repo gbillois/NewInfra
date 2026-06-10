@@ -1,4 +1,4 @@
-import { llmTrends, llmItemCapacity, type LlmTrend } from './llm';
+import { llmTrends, llmItemCapacity, llmProvider, type LlmTrend } from './llm';
 import type { Env, TrendRow, TrendSetRow } from './types';
 
 // Moteur de tendances.
@@ -66,7 +66,9 @@ export async function getOrComputeSet(
     // Mois révolus : immuables. Fenêtres glissantes : valides 26 h.
     const closedMonth = windowKey.startsWith('month:') && end < Date.now() / 1000 - DAY;
     const stored = await getStoredSet(env, windowKey, start, end, closedMonth ? null : 26 * 3600);
-    if (stored) return stored;
+    // Une clé Anthropic ajoutée après le premier calcul doit invalider les
+    // résultats produits par Workers AI, même s'ils sont encore frais.
+    if (stored && stored.set.provider === llmProvider(env)) return stored;
   }
   return await computeSet(env, windowKey, start, end);
 }

@@ -59,7 +59,7 @@ function renderMeta(set) {
     <span class="micro">${esc(WINDOW_LABELS[currentWindow] || set.window_key)} · ${fmtDate(set.period_start)} → ${fmtDate(set.period_end)}</span>
     <span class="micro">${set.article_count} actualités analysées</span>
     <span class="micro">généré le ${new Date(set.generated_at * 1000).toLocaleString('fr-FR')}</span>
-    <span class="micro">moteur : ${esc(set.provider || '—')}</span>`;
+    <span class="micro">moteur : ${esc([set.provider, set.model].filter(Boolean).join(' / ') || '—')}</span>`;
 }
 
 function renderTrends(trends) {
