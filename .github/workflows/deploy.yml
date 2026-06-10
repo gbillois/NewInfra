@@ -82,14 +82,12 @@ jobs:
           fi
           if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
             echo "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY
-            npx wrangler secret list --json | jq -e '.[] | select(.name == "ANTHROPIC_API_KEY")' >/dev/null
             echo "ANTHROPIC_API_KEY is configured on the Worker"
           else
             echo "::warning::ANTHROPIC_API_KEY is absent from GitHub Actions secrets"
           fi
           if [ -n "${OPENAI_API_KEY:-}" ]; then
             echo "$OPENAI_API_KEY" | npx wrangler secret put OPENAI_API_KEY
-            npx wrangler secret list --json | jq -e '.[] | select(.name == "OPENAI_API_KEY")' >/dev/null
             echo "OPENAI_API_KEY is configured on the Worker"
           else
             echo "::warning::OPENAI_API_KEY is absent from GitHub Actions secrets"
