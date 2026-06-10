@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NewsRadar — tendances</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,600;1,500&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <a class="brand" href="/">NewsRadar<span class="dot">.</span></a>
+      <span class="brand-sub">revue des tendances</span>
+      <nav>
+        <a href="/" class="active">Tendances</a>
+        <a href="/settings">Réglages</a>
+      </nav>
+    </header>
+
+    <div class="periodbar">
+      <span class="micro">Période</span>
+      <button class="chip" data-window="7d">7 jours</button>
+      <button class="chip" data-window="30d">30 jours</button>
+      <button class="chip" data-window="180d">6 mois</button>
+      <button class="chip" data-window="365d">12 mois</button>
+      <button class="chip" data-window="custom">Personnalisée</button>
+      <div class="custom-range" id="customRange">
+        <input type="date" id="dateFrom" />
+        <span class="micro">→</span>
+        <input type="date" id="dateTo" />
+        <button class="btn primary" id="applyCustom">Afficher</button>
+      </div>
+      <button class="btn" id="refreshBtn" title="Recalculer les tendances de la période" style="margin-left:auto">↻ Recalculer</button>
+    </div>
+
+    <div class="meta-line" id="metaLine"></div>
+
+    <main class="trends" id="trends"></main>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer">
+    <header>
+      <button class="close" id="drawerClose" aria-label="Fermer">✕</button>
+      <span class="micro" id="drawerMeta"></span>
+      <h3 id="drawerTitle"></h3>
+      <p id="drawerSummary"></p>
+    </header>
+    <div class="list" id="drawerList"></div>
+  </aside>
+
+  <script src="/app.js"></script>
+</body>
+</html>
