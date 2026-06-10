@@ -1,5 +1,5 @@
 {
-  // NewsRadar — Worker unique : API + assets statiques + crons.
+  // NewsRadar — Worker unique : API + assets statiques.
   "name": "newsradar",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-01",
@@ -21,15 +21,5 @@
       "migrations_dir": "migrations"
     }
   ],
-  "triggers": {
-    "crons": [
-      // Collecte RSS + embeddings + dédoublonnage, toutes les heures.
-      "13 * * * *",
-      // Recalcul quotidien des tendances 7j / 30j / mois courant.
-      "42 5 * * *",
-      // Recalcul hebdomadaire des fenêtres longues (6 mois / 12 mois).
-      "7 6 * * 1"
-    ]
-  },
   "observability": { "enabled": true }
 }

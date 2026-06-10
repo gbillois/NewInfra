@@ -7,7 +7,7 @@ option pour la qualité du nommage des tendances.
 
 ## Ce que fait l'app
 
-1. **Collecte** (cron horaire) : chaque flux RSS/Atom actif est récupéré,
+1. **Collecte** (manuelle pour le moment) : chaque flux RSS/Atom actif est récupéré,
    les nouveaux articles insérés dans D1.
 2. **Embeddings + dédoublonnage** : chaque article est vectorisé
    (`@cf/baai/bge-m3`, multilingue FR/EN). Les quasi-doublons inter-sources
@@ -29,7 +29,7 @@ option pour la qualité du nommage des tendances.
 ```
 Cloudflare Worker "newsradar"
   ├─ public/            assets statiques (dashboard, réglages, login)
-  ├─ src/index.ts       routeur API + auth cookie + crons
+  ├─ src/index.ts       routeur API + auth cookie
   ├─ src/collect.ts     fetch RSS → insert → embeddings → dédoublonnage
   ├─ src/rss.ts         parseur RSS 2.0 / Atom 1.0 sans dépendance
   ├─ src/embed.ts       Workers AI bge-m3 + blobs float32 + cosinus
@@ -38,8 +38,8 @@ Cloudflare Worker "newsradar"
 
 D1 "newsradar-db" : feeds, articles (embedding BLOB, duplicate_of),
                     trend_sets, trends, trend_articles, settings
-Crons natifs : collecte horaire · tendances quotidiennes (7j/30j/mois) ·
-               fenêtres longues hebdomadaires (180j/365j)
+Automatisation : Cron Triggers désactivés temporairement · collecte et
+                 recalculs lancés depuis Réglages
 ```
 
 ## Configuration
@@ -77,7 +77,8 @@ les tendances utilisent Workers AI (Llama 3.3), inclus dans le compte.
 2. Ajouter `APP_PASSWORD` (et idéalement `ANTHROPIC_API_KEY`) dans les
    secrets GitHub, relancer le workflow.
 3. Ouvrir l'app → Réglages → **Collecter maintenant**, puis
-   **Recalculer 7 jours**. Les crons prennent ensuite le relais.
+   **Recalculer 7 jours**. La collecte et les recalculs restent manuels tant
+   que les Cron Triggers Cloudflare sont désactivés.
 
 > ⚠️ Le plan **Workers gratuit** limite le CPU à 10 ms par requête ; le
 > dédoublonnage vectoriel peut frôler cette limite quand le volume monte.
