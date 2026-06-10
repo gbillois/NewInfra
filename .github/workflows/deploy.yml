@@ -72,8 +72,8 @@ jobs:
           if-no-files-found: ignore
 
       # Les secrets applicatifs sont poussés s'ils existent côté GitHub.
-      # APP_PASSWORD protège l'UI ; ANTHROPIC_API_KEY active Claude pour le
-      # nommage des tendances (sinon repli Workers AI).
+      # APP_PASSWORD protège l'UI ; les clés LLM rendent leurs modèles
+      # disponibles dans le sélecteur (sinon repli Workers AI).
       - name: Push Worker secrets
         run: |
           set -euo pipefail
@@ -85,11 +85,19 @@ jobs:
             npx wrangler secret list --json | jq -e '.[] | select(.name == "ANTHROPIC_API_KEY")' >/dev/null
             echo "ANTHROPIC_API_KEY is configured on the Worker"
           else
-            echo "::warning::ANTHROPIC_API_KEY is absent from GitHub Actions secrets; trends will use Workers AI"
+            echo "::warning::ANTHROPIC_API_KEY is absent from GitHub Actions secrets"
+          fi
+          if [ -n "${OPENAI_API_KEY:-}" ]; then
+            echo "$OPENAI_API_KEY" | npx wrangler secret put OPENAI_API_KEY
+            npx wrangler secret list --json | jq -e '.[] | select(.name == "OPENAI_API_KEY")' >/dev/null
+            echo "OPENAI_API_KEY is configured on the Worker"
+          else
+            echo "::warning::OPENAI_API_KEY is absent from GitHub Actions secrets"
           fi
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Smoke test
         run: |

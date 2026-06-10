@@ -134,6 +134,16 @@ header.top nav a:hover, header.top nav a.active { color: var(--paper); border-bo
   color-scheme: dark;
 }
 
+select {
+  appearance: none;
+  min-width: min(100%, 420px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  padding: 10px 34px 10px 12px;
+  font: inherit;
+}
+
 .btn {
   appearance: none;
   border: 1px solid var(--line);

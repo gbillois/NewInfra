@@ -26,9 +26,36 @@ async function loadStatus() {
     <div class="stat"><span class="v">${s.duplicates ?? 0}</span><span class="l">doublons détectés</span></div>
     <div class="stat"><span class="v">${s.feeds ?? 0}</span><span class="l">flux actifs</span></div>
     <div class="stat"><span class="v" style="font-size:14px;line-height:2">${last}</span><span class="l">dernière collecte</span></div>
-    <div class="stat"><span class="v" style="font-size:14px;line-height:2">${esc(s.configured_provider)}</span><span class="l">moteur configuré</span></div>
+    <div class="stat"><span class="v" style="font-size:14px;line-height:2">${esc([s.configured_provider, s.configured_model].filter(Boolean).join(' / '))}</span><span class="l">moteur configuré</span></div>
     <div class="stat"><span class="v" style="font-size:14px;line-height:2">${esc([s.last_trends_provider, s.last_trends_model].filter(Boolean).join(' / ') || '—')}</span><span class="l">dernières tendances</span></div>`;
 }
+
+async function loadLlmSettings() {
+  const settings = await api('/api/llm-settings');
+  const select = $('llmModel');
+  select.innerHTML = settings.models.map((model) =>
+    `<option value="${esc(model.id)}">${esc(model.provider)} · ${esc(model.name)} — ${esc(model.description)}</option>`
+  ).join('');
+  select.value = settings.model;
+  select.disabled = settings.models.length === 0;
+  $('saveLlmModel').disabled = settings.models.length === 0;
+  $('llmNotice').textContent = settings.models.length
+    ? 'Le prochain recalcul utilisera le modèle sélectionné.'
+    : 'Ajoute ANTHROPIC_API_KEY ou OPENAI_API_KEY pour sélectionner un modèle.';
+}
+
+$('saveLlmModel').addEventListener('click', async () => {
+  $('saveLlmModel').disabled = true;
+  try {
+    const result = await api('/api/llm-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ model: $('llmModel').value }),
+    });
+    $('llmNotice').textContent = `${result.model} enregistré. Recalcule les tendances pour appliquer ce choix.`;
+    loadStatus();
+  } catch (e) { $('llmNotice').textContent = `Erreur : ${e.message}`; }
+  finally { $('saveLlmModel').disabled = false; }
+});
 
 async function loadFeeds() {
   const { feeds } = await api('/api/feeds');
@@ -105,4 +132,5 @@ $('logout').addEventListener('click', async (e) => {
 });
 
 loadStatus();
+loadLlmSettings();
 loadFeeds();

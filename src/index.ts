@@ -1,5 +1,5 @@
 import { collectAll } from './collect';
-import { llmProvider } from './llm';
+import { llmConfig, MODEL_OPTIONS, providerAvailable } from './llm';
 import { getOrComputeSet, refreshDaily, refreshLong, windowBounds, STANDARD_WINDOWS } from './trends';
 import type { Env } from './types';
 
@@ -94,8 +94,34 @@ async function handleApi(request: Request, url: URL, env: Env, ctx: ExecutionCon
               (SELECT provider FROM trend_sets ORDER BY generated_at DESC LIMIT 1) AS last_trends_provider,
               (SELECT model FROM trend_sets ORDER BY generated_at DESC LIMIT 1) AS last_trends_model`
     ).first();
-    const provider = llmProvider(env);
-    return json({ ...counts, provider, configured_provider: provider, auth: Boolean(env.APP_PASSWORD) });
+    const config = await llmConfig(env);
+    return json({
+      ...counts,
+      provider: config.provider,
+      configured_provider: config.provider,
+      configured_model: config.model,
+      auth: Boolean(env.APP_PASSWORD),
+    });
+  }
+
+  if (path === '/api/llm-settings' && method === 'GET') {
+    const config = await llmConfig(env);
+    return json({
+      ...config,
+      models: MODEL_OPTIONS.filter((option) => providerAvailable(env, option.provider)),
+    });
+  }
+  if (path === '/api/llm-settings' && method === 'PUT') {
+    const body: any = await request.json().catch(() => ({}));
+    const model = String(body.model ?? '');
+    const option = MODEL_OPTIONS.find((candidate) => candidate.id === model);
+    if (!option || !providerAvailable(env, option.provider)) return json({ error: 'Modèle indisponible' }, 400);
+    const stmt = env.DB.prepare(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`
+    );
+    await env.DB.batch([stmt.bind('llm_provider', option.provider), stmt.bind('llm_model', option.id)]);
+    return json({ ok: true, provider: option.provider, model: option.id });
   }
 
   // ---- tendances

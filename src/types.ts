@@ -4,8 +4,10 @@ export interface Env {
   ASSETS: Fetcher;
   /** Mot de passe partagé. Si absent, l'app est publique (premier déploiement). */
   APP_PASSWORD?: string;
-  /** Si présent, le nommage des tendances passe par Claude au lieu de Workers AI. */
+  /** Si présent, les modèles Claude deviennent disponibles dans le sélecteur. */
   ANTHROPIC_API_KEY?: string;
+  /** Si présent, les modèles OpenAI deviennent disponibles dans le sélecteur. */
+  OPENAI_API_KEY?: string;
 }
 
 export interface FeedRow {

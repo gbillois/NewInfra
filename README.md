@@ -51,10 +51,12 @@ Secrets **GitHub Actions** (Settings → Secrets and variables → Actions) :
 | `CLOUDFLARE_API_TOKEN` | oui | Déploiement (Workers + D1 + Workers AI). |
 | `CLOUDFLARE_ACCOUNT_ID` | oui | Compte Cloudflare cible. |
 | `APP_PASSWORD` | recommandé | Mot de passe partagé de l'UI. Si absent, l'app est publique. |
-| `ANTHROPIC_API_KEY` | optionnel | Active Claude pour le nommage des tendances (qualité nettement supérieure, surtout en français). Sans clé : Workers AI (Llama 3.3), inclus dans le compte. |
+| `ANTHROPIC_API_KEY` | optionnel | Rend les modèles Claude disponibles dans le sélecteur. |
+| `OPENAI_API_KEY` | optionnel | Rend les modèles GPT disponibles dans le sélecteur. |
 
 Le workflow `deploy.yml` crée la base D1 au premier run, applique les
-migrations, déploie le Worker et pousse les secrets applicatifs.
+migrations, déploie le Worker et pousse les secrets applicatifs. Sans clé LLM,
+les tendances utilisent Workers AI (Llama 3.3), inclus dans le compte.
 
 ## API
 
