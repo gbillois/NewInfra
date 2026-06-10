@@ -1,118 +1,83 @@
-# Cyber News Aggregator
+# NewsRadar
 
-Petit aggregateur de news cybersécurité déployé sur **Cloudflare Pages +
-D1 + Pages Functions**. Inspiration : des sites comme `kordon.app` qui
-publient une synthèse quotidienne croisant plusieurs articles.
+Agrégateur de news avec **détection de tendances multi-périodes** et
+dédoublonnage, pensé pour préparer une revue d'actualité mensuelle/annuelle.
+Déployé sur **Cloudflare Workers + D1 + Workers AI**, avec **Claude** en
+option pour la qualité du nommage des tendances.
 
 ## Ce que fait l'app
 
-1. **Collecte** : toutes les heures, chaque flux RSS/Atom activé est
-   récupéré et les nouveaux articles insérés dans D1 (table `articles`).
-2. **Synthèse LLM multi-articles** : à la demande (bouton *Rafraîchir*)
-   ou via cron (quotidien / hebdo / bi-mensuel / mensuel), un LLM
-   regroupe les articles de la fenêtre par thème et produit une
-   synthèse Markdown avec citations vers les sources.
-3. **UI** : page d'accueil avec sélecteur de période (24h / 7j / 15j /
-   30j), rendu Markdown de la synthèse, liste des articles sources.
-4. **Settings** : choix du provider LLM (Workers AI / Anthropic /
-   OpenAI), CRUD des flux, import/export OPML et JSON.
+1. **Collecte** (cron horaire) : chaque flux RSS/Atom actif est récupéré,
+   les nouveaux articles insérés dans D1.
+2. **Embeddings + dédoublonnage** : chaque article est vectorisé
+   (`@cf/baai/bge-m3`, multilingue FR/EN). Les quasi-doublons inter-sources
+   (cosinus ≥ 0,92 dans une fenêtre de ±4 jours) sont rattachés à un article
+   canonique.
+3. **Tendances** : un LLM regroupe les actualités dédupliquées d'une période
+   en tendances nommées en français, avec résumé, thème, score d'importance
+   et liste d'articles. **Un article peut appartenir à plusieurs tendances.**
+   - Fenêtres courtes (7 j, 30 j, mois calendaire) : analyse directe des titres.
+   - Fenêtres longues (6 mois, 12 mois) : agrégation hiérarchique — les
+     tendances mensuelles sont fusionnées en **macro-tendances de fond**
+     (ex. « La bataille des frontier models et des benchmarks »).
+   - Période personnalisée : calculée à la demande depuis le dashboard.
+4. **Dashboard** : sélecteur de période, cartes de tendances classées par
+   score, clic → panneau listant les articles sources (avec liens).
 
 ## Architecture
 
 ```
-Cloudflare Pages (static HTML/JS/CSS)
-  ├─ index.html + app.js          → home (synthèse + refresh)
-  ├─ settings.html + settings.js  → flux + provider LLM
-  └─ style.css
+Cloudflare Worker "newsradar"
+  ├─ public/            assets statiques (dashboard, réglages, login)
+  ├─ src/index.ts       routeur API + auth cookie + crons
+  ├─ src/collect.ts     fetch RSS → insert → embeddings → dédoublonnage
+  ├─ src/rss.ts         parseur RSS 2.0 / Atom 1.0 sans dépendance
+  ├─ src/embed.ts       Workers AI bge-m3 + blobs float32 + cosinus
+  ├─ src/llm.ts         Claude (claude-opus-4-8) ou Workers AI (Llama 3.3)
+  └─ src/trends.ts      moteur de tendances (court + macro hiérarchique)
 
-functions/
-  ├─ _lib/              → modules partagés (pas d'onRequest, non routés)
-  │    ├─ rss.js        → parseur RSS 2.0 / Atom 1.0
-  │    ├─ llm.js        → abstraction Workers AI / Anthropic / OpenAI
-  │    ├─ period.js     → calcul des fenêtres day/week/fortnight/month
-  │    ├─ db.js         → helpers D1
-  │    ├─ collect.js    → fetch + upsert des flux
-  │    └─ synthesize.js → prompt + appel LLM + persistance
-  └─ api/
-       ├─ feeds/[id].js · feeds/index.js · feeds/export.js · feeds/import.js
-       ├─ articles.js
-       ├─ syntheses.js
-       ├─ settings.js
-       ├─ refresh.js              → bouton UI (collect + synth, protégé par cooldown)
-       └─ cron/collect.js · cron/synthesize.js  → protégés par CRON_SECRET
-
-migrations/
-  ├─ 0001_init.sql            → table "content" (legacy, ne fait rien)
-  └─ 0002_news_schema.sql     → feeds, articles, syntheses, settings + seed
-
-.github/workflows/
-  ├─ deploy.yml               → build + deploy Pages (smoke test inclus)
-  └─ cron.yml                 → collecte horaire + synthèses programmées
+D1 "newsradar-db" : feeds, articles (embedding BLOB, duplicate_of),
+                    trend_sets, trends, trend_articles, settings
+Crons natifs : collecte horaire · tendances quotidiennes (7j/30j/mois) ·
+               fenêtres longues hebdomadaires (180j/365j)
 ```
 
-## Configuration à faire dans Cloudflare
+## Configuration
 
-Secrets (**Pages project → Settings → Environment variables**, chiffrés) :
+Secrets **GitHub Actions** (Settings → Secrets and variables → Actions) :
 
-| Secret                | Requis si…                 | Rôle |
-|-----------------------|----------------------------|------|
-| `APP_PASSWORD`        | production                 | Mot de passe partagé pour l'accès web. Si absent, l'app est publique (utile pour le premier déploiement). |
-| `CRON_SECRET`         | production                 | Protège `/api/cron/*`. Doit correspondre au secret GitHub Actions. |
-| `ANTHROPIC_API_KEY`   | provider = `anthropic`     | Clé API Anthropic. |
-| `OPENAI_API_KEY`      | provider = `openai`        | Clé API OpenAI. |
+| Secret | Requis | Rôle |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | oui | Déploiement (Workers + D1 + Workers AI). |
+| `CLOUDFLARE_ACCOUNT_ID` | oui | Compte Cloudflare cible. |
+| `APP_PASSWORD` | recommandé | Mot de passe partagé de l'UI. Si absent, l'app est publique. |
+| `ANTHROPIC_API_KEY` | optionnel | Active Claude pour le nommage des tendances (qualité nettement supérieure, surtout en français). Sans clé : Workers AI (Llama 3.3), inclus dans le compte. |
 
-Bindings (déjà dans `wrangler.toml` et injectés par `deploy.yml`) :
+Le workflow `deploy.yml` crée la base D1 au premier run, applique les
+migrations, déploie le Worker et pousse les secrets applicatifs.
 
-- `DB` : base D1 `newinfragg-db` (créée automatiquement au premier run).
-- `AI` : binding Workers AI (fonctionne out-of-the-box si Workers AI
-  est activé sur le compte Cloudflare).
-
-## Configuration à faire dans GitHub
-
-Dans **Settings → Secrets and variables → Actions** :
-
-- Secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (déjà nécessaires
-  pour le déploiement).
-- Secret `CRON_SECRET` avec la même valeur que côté Cloudflare Pages.
-- Variable (optionnelle) `APP_BASE_URL` pointant vers l'URL de prod
-  (par défaut `https://newinfragg.pages.dev`).
-
-## Endpoints API
+## API
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/api/feeds` | Liste des flux. |
-| POST | `/api/feeds` | Ajoute un flux `{url, name}`. |
-| PATCH | `/api/feeds/:id` | Active/désactive, renomme, change l'URL. |
-| DELETE | `/api/feeds/:id` | Supprime un flux (et ses articles, ON DELETE CASCADE). |
-| GET | `/api/feeds/export?format=opml\|json` | Export. |
-| POST | `/api/feeds/import` | Import OPML (XML) ou JSON. |
-| GET | `/api/articles?period=…` ou `?ids=…` | Liste d'articles. |
-| GET | `/api/syntheses?period=…` | Récupère la synthèse stockée pour la période en cours. |
-| GET | `/api/settings` | Paramètres + capacités du déploiement (backends disponibles). |
-| PUT | `/api/settings` | Met à jour `{llm_provider, llm_model, language}`. |
-| POST | `/api/refresh` | Bouton UI : `{period, collect?}`, cooldown 30s. |
-| POST | `/api/cron/collect` | Collecte tous les flux (cron). |
-| POST | `/api/cron/synthesize?period=…` | Re-génère la synthèse (cron). |
+| POST | `/api/login` · `/api/logout` | Auth cookie SHA-256(APP_PASSWORD). |
+| GET | `/api/status` | Compteurs, dernière collecte, moteur IA actif. |
+| GET | `/api/trends?window=7d\|30d\|180d\|365d[&refresh=1]` | Tendances (cache 26 h, recalcul forçable). |
+| GET | `/api/trends?from=YYYY-MM-DD&to=YYYY-MM-DD` | Période personnalisée (calcul à la demande). |
+| GET | `/api/trends/:id/articles` | Articles d'une tendance. |
+| GET/POST | `/api/feeds` · PATCH/DELETE `/api/feeds/:id` | Gestion des flux. |
+| POST | `/api/collect` | Collecte immédiate. |
+| POST | `/api/recompute` `{window}` | Recalcul forcé d'une fenêtre. |
 
-## Schéma D1
+## Premier démarrage
 
-```sql
-feeds      (id, url, name, enabled, last_fetched_at, last_status, created_at)
-articles   (id, feed_id, guid, url, title, author, summary, content,
-            published_at, fetched_at)   -- UNIQUE(feed_id, guid)
-syntheses  (id, period, period_start, period_end, content, article_ids,
-            model, provider, article_count, created_at)
-            -- UNIQUE(period, period_start)
-settings   (key, value, updated_at)
-```
+1. Pousser sur `main` → le workflow déploie tout.
+2. Ajouter `APP_PASSWORD` (et idéalement `ANTHROPIC_API_KEY`) dans les
+   secrets GitHub, relancer le workflow.
+3. Ouvrir l'app → Réglages → **Collecter maintenant**, puis
+   **Recalculer 7 jours**. Les crons prennent ensuite le relais.
 
-## Déploiement initial
-
-1. Pousser la branche — `deploy.yml` crée la DB, applique les deux
-   migrations, déploie et vérifie la home + `/api/feeds` +
-   `/api/syntheses?period=day`.
-2. Ajouter les secrets ci-dessus côté Cloudflare et GitHub.
-3. Ouvrir `/` et cliquer **Rafraîchir la synthèse** pour déclencher la
-   première collecte + synthèse (30–60 s).
-4. À partir de là, `cron.yml` prend le relais.
+> ⚠️ Le plan **Workers gratuit** limite le CPU à 10 ms par requête ; le
+> dédoublonnage vectoriel peut frôler cette limite quand le volume monte.
+> Le plan Workers Paid (5 $/mois) lève la contrainte. Les fenêtres longues
+> nécessitent quelques mois d'historique avant d'être pertinentes.

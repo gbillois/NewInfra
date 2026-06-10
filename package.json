@@ -1,0 +1,19 @@
+{
+  "name": "newsradar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agrégateur de news avec détection de tendances multi-périodes (Cloudflare Workers + D1 + Workers AI / Claude)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250607.0",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.20.0"
+  }
+}
