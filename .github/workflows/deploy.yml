@@ -92,10 +92,17 @@ jobs:
           else
             echo "::warning::OPENAI_API_KEY is absent from GitHub Actions secrets"
           fi
+          if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+            echo "$OPENROUTER_API_KEY" | npx wrangler secret put OPENROUTER_API_KEY
+            echo "OPENROUTER_API_KEY is configured on the Worker"
+          else
+            echo "::warning::OPENROUTER_API_KEY is absent from GitHub Actions secrets"
+          fi
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       - name: Smoke test
         run: |
