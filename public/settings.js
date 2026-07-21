@@ -41,7 +41,7 @@ async function loadLlmSettings() {
   $('saveLlmModel').disabled = settings.models.length === 0;
   $('llmNotice').textContent = settings.models.length
     ? 'Le prochain recalcul utilisera le modèle sélectionné.'
-    : 'Ajoute ANTHROPIC_API_KEY ou OPENAI_API_KEY pour sélectionner un modèle.';
+    : 'Ajoute ANTHROPIC_API_KEY, OPENAI_API_KEY ou OPENROUTER_API_KEY pour sélectionner un modèle.';
 }
 
 $('saveLlmModel').addEventListener('click', async () => {

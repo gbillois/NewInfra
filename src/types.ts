@@ -8,6 +8,8 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   /** Si présent, les modèles OpenAI deviennent disponibles dans le sélecteur. */
   OPENAI_API_KEY?: string;
+  /** Si présent, le catalogue unifié OpenRouter devient disponible. */
+  OPENROUTER_API_KEY?: string;
 }
 
 export interface FeedRow {

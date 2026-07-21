@@ -53,6 +53,7 @@ Secrets **GitHub Actions** (Settings → Secrets and variables → Actions) :
 | `APP_PASSWORD` | recommandé | Mot de passe partagé de l'UI. Si absent, l'app est publique. |
 | `ANTHROPIC_API_KEY` | optionnel | Rend les modèles Claude disponibles dans le sélecteur. |
 | `OPENAI_API_KEY` | optionnel | Rend les modèles GPT disponibles dans le sélecteur. |
+| `OPENROUTER_API_KEY` | optionnel | Rend les modèles OpenRouter disponibles dans le sélecteur. |
 
 Le workflow `deploy.yml` crée la base D1 au premier run, applique les
 migrations, déploie le Worker et pousse les secrets applicatifs. Sans clé LLM,

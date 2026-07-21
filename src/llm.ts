@@ -2,11 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Env } from './types';
 
 // Abstraction LLM pour la synthèse de tendances :
-//  - Anthropic ou OpenAI si la clé correspondante est configurée ;
+//  - Anthropic, OpenAI ou OpenRouter si la clé correspondante est configurée ;
 //  - repli 100 % Cloudflare sur Workers AI sinon.
 
 export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8';
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
+export const DEFAULT_OPENROUTER_MODEL = 'openrouter/auto';
 export const WORKERS_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 export const ANTHROPIC_MODELS = [
   { provider: 'anthropic', id: 'claude-fable-5', name: 'Claude Fable 5', description: 'Qualité maximale, coût élevé' },
@@ -19,7 +20,12 @@ export const OPENAI_MODELS = [
   { provider: 'openai', id: 'gpt-5.4', name: 'GPT-5.4', description: 'Très haute qualité' },
   { provider: 'openai', id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', description: 'Rapide et économique' },
 ] as const;
-export const MODEL_OPTIONS = [...ANTHROPIC_MODELS, ...OPENAI_MODELS] as const;
+export const OPENROUTER_MODELS = [
+  { provider: 'openrouter', id: 'openrouter/auto', name: 'OpenRouter Auto', description: 'Routage automatique multi-fournisseurs' },
+  { provider: 'openrouter', id: '~openai/gpt-latest', name: 'OpenAI latest via OpenRouter', description: 'Alias du dernier modèle OpenAI' },
+  { provider: 'openrouter', id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6 via OpenRouter', description: 'Excellent équilibre qualité / coût' },
+] as const;
+export const MODEL_OPTIONS = [...ANTHROPIC_MODELS, ...OPENAI_MODELS, ...OPENROUTER_MODELS] as const;
 
 export interface LlmTrend {
   title: string;
@@ -74,24 +80,27 @@ export async function llmConfig(env: Env): Promise<{ provider: string; model: st
     return { provider: 'anthropic', model: legacyClaude?.id ?? DEFAULT_CLAUDE_MODEL };
   }
   if (env.OPENAI_API_KEY) return { provider: 'openai', model: DEFAULT_OPENAI_MODEL };
+  if (env.OPENROUTER_API_KEY) return { provider: 'openrouter', model: DEFAULT_OPENROUTER_MODEL };
   return { provider: 'workers-ai', model: WORKERS_AI_MODEL };
 }
 
 export function providerAvailable(env: Env, provider: string): boolean {
   return provider === 'anthropic' ? Boolean(env.ANTHROPIC_API_KEY)
     : provider === 'openai' ? Boolean(env.OPENAI_API_KEY)
+      : provider === 'openrouter' ? Boolean(env.OPENROUTER_API_KEY)
       : provider === 'workers-ai';
 }
 
 /** Capacité d'entrée approximative (en items de liste) selon le provider. */
 export function llmItemCapacity(env: Env): number {
-  return env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY ? 1500 : 450;
+  return env.ANTHROPIC_API_KEY || env.OPENAI_API_KEY || env.OPENROUTER_API_KEY ? 1500 : 450;
 }
 
 export async function llmTrends(env: Env, system: string, user: string): Promise<LlmResult> {
   const config = await llmConfig(env);
   if (config.provider === 'anthropic') return await claudeTrends(env, config.model, system, user);
   if (config.provider === 'openai') return await openAiTrends(env, config.model, system, user);
+  if (config.provider === 'openrouter') return await openRouterTrends(env, config.model, system, user);
   return await workersAiTrends(env, system, user);
 }
 
@@ -137,6 +146,33 @@ async function openAiTrends(env: Env, model: string, system: string, user: strin
   const text = result.output?.flatMap((item: any) => item.content ?? [])
     .find((content: any) => content.type === 'output_text')?.text ?? '{}';
   return { trends: parseTrends(text), provider: 'openai', model };
+}
+
+async function openRouterTrends(env: Env, model: string, system: string, user: string): Promise<LlmResult> {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'X-OpenRouter-Title': 'NewsRadar',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 16000,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'newsradar_trends', strict: true, schema: TREND_SCHEMA },
+      },
+    }),
+  });
+  const result: any = await response.json();
+  if (!response.ok) throw new Error(`OpenRouter: ${result?.error?.message ?? `HTTP ${response.status}`}`);
+  const text = result.choices?.[0]?.message?.content ?? '{}';
+  return { trends: parseTrends(text), provider: 'openrouter', model: result.model ?? model };
 }
 
 async function workersAiTrends(env: Env, system: string, user: string): Promise<LlmResult> {
